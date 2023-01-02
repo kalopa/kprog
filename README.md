@@ -1,8 +1,9 @@
 # avrprog
 
 Programmer code for AVR chip using the libavr bootstrap module.
-This module is designed to work with the *libavr/bootstrap.S* code
-to program an AVR chip, in-situ.
+This module is designed to work with the
+[libavr/bootstrap.S](https://github.com/kalopa/libavr)
+code to program an AVR chip, in-situ.
 The **libavr** bootstrap code is designed to run in a measly 512
 words of code space at the top of AVR memory, and provide the
 bare minimum of programming functionality.
