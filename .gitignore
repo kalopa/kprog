@@ -29,7 +29,7 @@
 *.dylib
 
 # Executables
-*.exe
+avrprog
 *.out
 *.app
 *.i*86
