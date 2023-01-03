@@ -53,26 +53,28 @@ struct  speed   {
 	{0, 0}
 };
 
+int		serial_fd;
+
 /*
  * Open the serial port to talk to the AVR device.
  */
-int
+void
 serial_open(char *device, int baud)
 {
-	int i, fd;
+	int i;
 	struct termios tios;
 
 	/*
 	 * Try and open the device.
 	 */
-	if ((fd = open(device, O_RDWR|O_NOCTTY)) < 0) {
+	if ((serial_fd = open(device, O_RDWR|O_NOCTTY)) < 0) {
 		perror(device);
 		exit(1);
 	}
 	/*
 	 * Get the current tty parameters.
 	 */
-	if (tcgetattr(fd, &tios) < 0) {
+	if (tcgetattr(serial_fd, &tios) < 0) {
 		perror("avrprog: serial_open: tcgetattr");
 		exit(1);
 	}
@@ -90,35 +92,34 @@ serial_open(char *device, int baud)
 	tios.c_lflag = tios.c_iflag = tios.c_oflag = 0;
 	tios.c_cc[VMIN] = 0;
 	tios.c_cc[VTIME] = 40;
-	if (tcsetattr(fd, TCSANOW, &tios) < 0) {
+	if (tcsetattr(serial_fd, TCSANOW, &tios) < 0) {
 		perror("avrprog: serial_open: tcsetattr");
 		exit(1);
 	}
-	return(fd);
 }
 
 /*
  * Send a string of characters to the serial port.
  */
 void
-serial_send(int fd, char *strp)
+serial_send(char *strp)
 {
 	int ch;
 
 	while ((ch = *strp++) != '\0')
-		serial_write(fd, ch);
+		serial_write(ch);
 }
 
 /*
  * Read a single byte from the serial port.
  */
 int
-serial_read(int fd)
+serial_read()
 {
 	int n;
 	char buffer[2];
 
-	if ((n = read(fd, buffer, 1)) < 0) {
+	if ((n = read(serial_fd, buffer, 1)) < 0) {
 		perror("avrprog: serial_read");
 		exit(1);
 	}
@@ -131,12 +132,12 @@ serial_read(int fd)
  * Write a single character to the serial port.
  */
 void
-serial_write(int fd, int ch)
+serial_write(int ch)
 {
 	char buffer[2];
 
 	buffer[0] = ch;
-	if (write(fd, buffer, 1) < 0) {
+	if (write(serial_fd, buffer, 1) < 0) {
 		perror("avrprog: serial_write");
 		exit(1);
 	}

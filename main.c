@@ -32,7 +32,7 @@ void		usage();
 int
 main(int argc, char *argv[])
 {
-	int i, speed, serial_fd;
+	int i, speed;
 	char *device;;
 
 	optind = opterr = 0;
@@ -60,7 +60,7 @@ main(int argc, char *argv[])
 	}
 	if ((argc - optind) != 1)
 		usage();
-	serial_fd = serial_open(device, speed);
+	serial_open(device, speed);
 	/*
 	 * Initialize both memory buffers, then load the HEX file.
 	 */
@@ -70,11 +70,11 @@ main(int argc, char *argv[])
 	 * Sync the remote device so we're at a command prompt in the
 	 * bootstrap code.
 	 */
-	bootstrap_mode(serial_fd);
+	bootstrap_mode();
 	/*
 	 * Load the device flash image.
 	 */
-	device_load(serial_fd);
+	device_load();
 	/*
 	 * Compare images.
 	 */

@@ -22,21 +22,22 @@
 #define HIGHEST_BLOCK	0xfc
 
 extern	int	verbose;
+extern	int	serial_fd;
 extern	char	file_image[];
 extern	char	device_image[];
 
 /*
  * Prototypes...
  */
-void		bootstrap_mode(int);
-int		prompt_wait(int, void (*)(char *));
+void		bootstrap_mode();
+int		prompt_wait(void (*)(char *));
 void		intel_load(char *);
 int		get_hex_bytes(char *, int);
-int		serial_open(char *, int);
-void		serial_send(int, char *);
-int		serial_read(int);
-void		serial_write(int, int);
+void serial_open(char *, int);
+void		serial_send(char *);
+int		serial_read();
+void		serial_write(int);
 void		memory_init();
-void		device_load(int);
+void		device_load();
 void		image_compare();
 void		hexdump(char *, int);

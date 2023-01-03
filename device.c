@@ -38,7 +38,7 @@ int		offset;
  * the two sides of the communications channel. It's not pretty.
  */
 void
-bootstrap_mode(int fd)
+bootstrap_mode()
 {
 	int i, j, ch;
 	char *bootmsg = "BOOTv";
@@ -47,21 +47,21 @@ bootstrap_mode(int fd)
 	/*
 	 * Start by dumping any noise still left on the serial line.
 	 */
-	while (serial_read(fd) >= 0)
+	while (serial_read() >= 0)
 		;
 	/*
 	 * Wait to get some sort of boot message...
 	 */
 	for (i = 0; i < OUTER_TIMEOUT; i++) {
-		serial_send(fd, "\005\\");
+		serial_send("\005\\");
 		for (j = 0; j < INNER_TIMEOUT; j++) {
-			if ((ch = serial_read(fd)) == bootmsg[0])
+			if ((ch = serial_read()) == bootmsg[0])
 				break;
 		}
 		if (j == INNER_TIMEOUT)
 			continue;
 		j = 1;
-		while ((ch = serial_read(fd)) != -1 && bootmsg[j] != '\0') {
+		while ((ch = serial_read()) != -1 && bootmsg[j] != '\0') {
 			if (bootmsg[j++] != ch)
 				break;
 		}
@@ -79,19 +79,19 @@ bootstrap_mode(int fd)
 		fprintf(stderr, "avrprog: bootstrap_mode: could not initialize device.\n");
 		exit(1);
 	}
-	prompt_wait(fd, NULL);
+	prompt_wait(NULL);
 }
 
 /*
  *
  */
 int
-prompt_wait(int fd, void (*func)(char *))
+prompt_wait(void (*func)(char *))
 {
 	int ch, rcode = 0;
 
 	offset = 0;
-	while ((ch = serial_read(fd)) != -1) {
+	while ((ch = serial_read()) != -1) {
 		if (ch == '+') {
 			rcode = 1;
 			continue;

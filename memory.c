@@ -74,7 +74,7 @@ image_compare()
  * Load the local image memory from the device.
  */
 void
-device_load(int fd)
+device_load()
 {
 	int i;
 	char cmdbuffer[8];
@@ -82,8 +82,8 @@ device_load(int fd)
 	printf("Load flash image into local memory.\n");
 	for (i = 0; i < 128; i++) {
 		sprintf(cmdbuffer, "D%02X", i);
-		serial_send(fd, cmdbuffer);
-		prompt_wait(fd, mem_callback);
+		serial_send(cmdbuffer);
+		prompt_wait(mem_callback);
 		putchar('.');
 		fflush(stdout);
 	}
