@@ -17,7 +17,11 @@
  */
 #define FLASH_SIZE	32768
 #define MAX_LINELEN	512
+
 #define BLOCK_SIZE	128
+#define BLOCK_COUNT	256
+#define PAGE_SIZE	256
+#define PAGE_COUNT	128
 
 #define HIGHEST_BLOCK	0xfc
 
@@ -39,5 +43,6 @@ int		serial_read();
 void		serial_write(int);
 void		memory_init();
 void		device_load();
+void		reprogram_block(int);
 void		image_compare();
 void		hexdump(char *, int);

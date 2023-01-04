@@ -44,7 +44,7 @@ memory_init()
 void
 image_compare()
 {
-	int i, j, blkno, same;
+	int i, j, same;
 	char *ap, *bp;
 
 	/*
@@ -61,12 +61,8 @@ image_compare()
 				break;
 			}
 		}
-		if (!same) {
-			blkno = i >> 7;
-			printf("Page %d is different.\n", blkno);
-			if (blkno < HIGHEST_BLOCK)
-				reprogram_block(blkno);
-		}
+		if (!same)
+			reprogram_block(i >> 7);
 	}
 }
 
@@ -80,7 +76,7 @@ device_load()
 	char cmdbuffer[8];
 
 	printf("Load flash image into local memory.\n");
-	for (i = 0; i < 128; i++) {
+	for (i = 0; i < PAGE_COUNT; i++) {
 		sprintf(cmdbuffer, "D%02X", i);
 		serial_send(cmdbuffer);
 		prompt_wait(mem_callback);
@@ -88,7 +84,6 @@ device_load()
 		fflush(stdout);
 	}
 	putchar('\n');
-	hexdump(device_image, FLASH_SIZE);
 }
 
 /*

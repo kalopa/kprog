@@ -96,6 +96,10 @@ prompt_wait(void (*func)(char *))
 			rcode = 1;
 			continue;
 		}
+		if (ch == '-') {
+			printf("FAIL!\n");
+			exit(1);
+		}
 		if (ch == '@')
 			break;
 		if (func == NULL)
@@ -115,4 +119,60 @@ prompt_wait(void (*func)(char *))
 		exit(1);
 	}
 	return(rcode);
+}
+
+/*
+ * Reprogram a block of code.
+ */
+void
+reprogram_block(int blkno)
+{
+	int i, j;
+	char cmdbuffer[64], *cp, *memp;
+
+	if (blkno >= HIGHEST_BLOCK)
+		return;
+	printf("Re-programming block %d...\n", blkno);
+	/*
+	 * Right - is there any chance this is an empty block?
+	 */
+	memp = &file_image[blkno * BLOCK_SIZE];
+	for (i = 0; i < BLOCK_SIZE; i++)
+		if (*memp++ != 0xff)
+			break;
+	if (i == BLOCK_SIZE) {
+		/*
+		 * Easy! A page full of 0xff, just use the erase command.
+		 */
+		sprintf(cmdbuffer, "E%02X", blkno);
+		serial_send(cmdbuffer);
+		prompt_wait(NULL);
+		return;
+	}
+	/*
+	 * Start by filling the remote memory buffer with a block of data.
+	 */
+	memp = &file_image[blkno * BLOCK_SIZE];
+	verbose = 2;
+	for (i = 0; i < (BLOCK_SIZE/16); i++) {
+		cp = cmdbuffer;
+		*cp++ = i + '0';
+		for (j = 0; j < 16; j++) {
+			sprintf(cp, "%02X.", *memp++);
+			cp += 3;
+		}
+		serial_send(cmdbuffer);
+		prompt_wait(NULL);
+	}
+	/*
+	 * Now send the program command. To do this, we first erase the
+	 * block and then program it.
+	 */
+	printf("P%02x.", blkno);
+	sprintf(cmdbuffer, "E%02X", blkno);
+	serial_send(cmdbuffer);
+	prompt_wait(NULL);
+	sprintf(cmdbuffer, "P%02X", blkno);
+	serial_send(cmdbuffer);
+	prompt_wait(NULL);
 }
