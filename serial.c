@@ -1,19 +1,34 @@
 /*
- * Copyright (C) 2021, Kalopa Robotics Limited. All rights reserved.
+ * Copyright (c) 2021-23, Kalopa Robotics Limited.  All rights reserved.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published
- * by the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * 2. Redistributions in binary form must reproduce the above
+ *    copyright notice, this list of conditions and the following
+ *    disclaimer in the documentation and/or other materials provided
+ *    with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT
+ * NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+ * SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY
+ * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+ * GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #include <stdio.h>
 #include <unistd.h>
@@ -142,3 +157,90 @@ serial_write(int ch)
 		exit(1);
 	}
 }
+#if 0
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <termios.h>
+#include <syslog.h>
+#include <string.h>
+
+#include "kprog.h"
+
+struct  speed   {
+	int     value;
+	int     code;
+} speeds[] = {
+	{50, B50},
+	{75, B75},
+	{110, B110},
+	{134, B134},
+	{150, B150},
+	{200, B200},
+	{300, B300},
+	{600, B600},
+	{1200, B1200},
+	{1800, B1800},
+	{2400, B2400},
+	{4800, B4800},
+	{9600, B9600},
+	{19200, B19200},
+	{38400, B38400},
+	{57600, B57600},
+	{115200, B115200},
+	{230400, B230400},
+	{0, 0}
+};
+
+int		device_fd;
+
+/*
+ *
+ */
+void
+serial_open(char *devname)
+{
+	int i, speed = 9600;
+	char *cp;
+	struct termios tios;
+
+	if ((cp = strchr(devname, ':')) != NULL) {
+		*cp++ = '\0';
+		speed = atoi(cp);
+	}
+	printf("SERIAL OPEN [%s], SPD:%d\n", devname, speed);
+	if ((device_fd = open(devname, O_RDWR|O_NOCTTY|O_NDELAY)) < 0) {
+		fprintf(stderr, "?kprog - cannot open serial device: ");
+		perror(devname);
+		exit(1);
+	}
+	/*
+	* Get and set the tty parameters.
+	*/
+	if (tcgetattr(device_fd, &tios) < 0) {
+		perror("serial_master: tcgetattr failed");
+		exit(1);
+	}
+	for (i = 0; speeds[i].value > 0; i++)
+		if (speeds[i].value == speed)
+			break;
+	if (speeds[i].value == 0) {
+		fprintf(stderr, "?kprog - invalid serial baud rate: %d\n", speed);
+		exit(1);
+	}
+	cfsetispeed(&tios, speeds[i].code);
+	cfsetospeed(&tios, speeds[i].code);
+	tios.c_cflag &= ~(CSIZE|PARENB|CSTOPB);
+	tios.c_cflag |= (CLOCAL|CREAD|CS8);
+	tios.c_lflag = tios.c_iflag = tios.c_oflag = 0;
+	tios.c_cc[VMIN] = 0;
+	tios.c_cc[VTIME] = 10;
+	if (tcsetattr(device_fd, TCSANOW, &tios) < 0) {
+		perror("?kprog - tcsetattr failed");
+		exit(1);
+	}
+}
+#endif
