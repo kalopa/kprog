@@ -33,9 +33,12 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <termios.h>
 #include <syslog.h>
+#include <string.h>
 #include <errno.h>
 
 #include "kprog.h"
@@ -74,30 +77,33 @@ int		serial_fd;
  * Open the serial port to talk to the AVR device.
  */
 void
-serial_open(char *device, int baud)
+serial_open(char *device)
 {
-	int i;
+	int i, speed = 9600;
+	char *cp;
 	struct termios tios;
 
-	/*
-	 * Try and open the device.
-	 */
+	if ((cp = strchr(device, ':')) != NULL) {
+		*cp++ = '\0';
+		speed = atoi(cp);
+	}
 	if ((serial_fd = open(device, O_RDWR|O_NOCTTY)) < 0) {
+		fprintf(stderr, "?kprog - cannot open serial device: ");
 		perror(device);
 		exit(1);
 	}
 	/*
-	 * Get the current tty parameters.
-	 */
+	* Get and set the tty parameters.
+	*/
 	if (tcgetattr(serial_fd, &tios) < 0) {
-		perror("kprog: serial_open: tcgetattr");
+		perror("serial_master: tcgetattr failed");
 		exit(1);
 	}
 	for (i = 0; speeds[i].value > 0; i++)
-		if (speeds[i].value == baud)
+		if (speeds[i].value == speed)
 			break;
 	if (speeds[i].value == 0) {
-		fprintf(stderr, "kprog: invalid serial baud rate: %d\n", baud);
+		fprintf(stderr, "?kprog - invalid serial baud rate: %d\n", speed);
 		exit(1);
 	}
 	cfsetispeed(&tios, speeds[i].code);
@@ -108,7 +114,7 @@ serial_open(char *device, int baud)
 	tios.c_cc[VMIN] = 0;
 	tios.c_cc[VTIME] = 40;
 	if (tcsetattr(serial_fd, TCSANOW, &tios) < 0) {
-		perror("kprog: serial_open: tcsetattr");
+		perror("?kprog - tcsetattr failed");
 		exit(1);
 	}
 }
@@ -157,90 +163,3 @@ serial_write(int ch)
 		exit(1);
 	}
 }
-#if 0
-#include <stdio.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <termios.h>
-#include <syslog.h>
-#include <string.h>
-
-#include "kprog.h"
-
-struct  speed   {
-	int     value;
-	int     code;
-} speeds[] = {
-	{50, B50},
-	{75, B75},
-	{110, B110},
-	{134, B134},
-	{150, B150},
-	{200, B200},
-	{300, B300},
-	{600, B600},
-	{1200, B1200},
-	{1800, B1800},
-	{2400, B2400},
-	{4800, B4800},
-	{9600, B9600},
-	{19200, B19200},
-	{38400, B38400},
-	{57600, B57600},
-	{115200, B115200},
-	{230400, B230400},
-	{0, 0}
-};
-
-int		device_fd;
-
-/*
- *
- */
-void
-serial_open(char *devname)
-{
-	int i, speed = 9600;
-	char *cp;
-	struct termios tios;
-
-	if ((cp = strchr(devname, ':')) != NULL) {
-		*cp++ = '\0';
-		speed = atoi(cp);
-	}
-	printf("SERIAL OPEN [%s], SPD:%d\n", devname, speed);
-	if ((device_fd = open(devname, O_RDWR|O_NOCTTY|O_NDELAY)) < 0) {
-		fprintf(stderr, "?kprog - cannot open serial device: ");
-		perror(devname);
-		exit(1);
-	}
-	/*
-	* Get and set the tty parameters.
-	*/
-	if (tcgetattr(device_fd, &tios) < 0) {
-		perror("serial_master: tcgetattr failed");
-		exit(1);
-	}
-	for (i = 0; speeds[i].value > 0; i++)
-		if (speeds[i].value == speed)
-			break;
-	if (speeds[i].value == 0) {
-		fprintf(stderr, "?kprog - invalid serial baud rate: %d\n", speed);
-		exit(1);
-	}
-	cfsetispeed(&tios, speeds[i].code);
-	cfsetospeed(&tios, speeds[i].code);
-	tios.c_cflag &= ~(CSIZE|PARENB|CSTOPB);
-	tios.c_cflag |= (CLOCAL|CREAD|CS8);
-	tios.c_lflag = tios.c_iflag = tios.c_oflag = 0;
-	tios.c_cc[VMIN] = 0;
-	tios.c_cc[VTIME] = 10;
-	if (tcsetattr(device_fd, TCSANOW, &tios) < 0) {
-		perror("?kprog - tcsetattr failed");
-		exit(1);
-	}
-}
-#endif

@@ -48,21 +48,15 @@ void		usage();
 int
 main(int argc, char *argv[])
 {
-	int i, speed;
+	int i;
 	char *device;;
 
 	optind = opterr = 0;
-	speed = 9600;
-	device = "/dev/ttyS0";
+	device = "/dev/ttyS0:9600";
 	mem_size = 32768;
-	while ((i = getopt(argc, argv, "s:l:v")) != EOF) {
+	while ((i = getopt(argc, argv, "d:v")) != EOF) {
 		switch (i) {
-		case 's':
-			if ((speed = atoi(optarg)) < 50)
-				usage();
-			break;
-
-		case 'l':
+		case 'd':
 			device = optarg;
 			break;
 
@@ -80,13 +74,10 @@ main(int argc, char *argv[])
 	printf("Memory: %d Bytes\n\n", mem_size);
 	if ((argc - optind) != 1)
 		usage();
-#if 0
 	if (*device == '/')
 		serial_open(device);
 	else
 		tcp_open(device);
-#endif
-	serial_open(device, speed);
 	/*
 	 * Initialize both memory buffers, then load the HEX file.
 	 */
@@ -113,6 +104,6 @@ main(int argc, char *argv[])
 void
 usage()
 {
-	fprintf(stderr, "Usage: kprog [-v][-s SPEED][-l LINE] program.hex\n");
+	fprintf(stderr, "Usage: kprog [-v][-d DEVICE] program.hex\n");
 	exit(2);
 }

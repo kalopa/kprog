@@ -32,13 +32,14 @@
 #
 CFLAGS=	-Wall -O
 
-SRCS=	main.c device.c intel.c serial.c memory.c
+SRCS=	main.c device.c intel.c serial.c tcp.c memory.c
 OBJS=	$(SRCS:.c=.o)
 BIN=	kprog
 
 all:	$(BIN)
 
 install: $(BIN)
+	install $(BIN) /usr/local/bin
 
 clean:
 	rm -f $(OBJS) $(BIN)

@@ -30,35 +30,31 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#define FLASH_SIZE	32768
-#define MAX_LINELEN	512
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <syslog.h>
+#include <string.h>
+#include <errno.h>
 
-#define BLOCK_SIZE	128
-#define BLOCK_COUNT	256
-#define PAGE_SIZE	256
-#define PAGE_COUNT	128
+#include "kprog.h"
 
-#define HIGHEST_BLOCK	0xfc
-
-extern	int	verbose;
-extern	int	serial_fd;
-extern	char	file_image[];
-extern	char	device_image[];
+int		tcp_fd;
 
 /*
- * Prototypes...
+ * Open the TCP port
  */
-void		bootstrap_mode();
-int		prompt_wait(void (*)(char *));
-void		intel_load(char *);
-int		get_hex_bytes(char *, int);
-void		serial_open(char *);
-void		serial_send(char *);
-int		serial_read();
-void		serial_write(int);
-void		tcp_open(char *);
-void		memory_init();
-void		device_load();
-void		reprogram_block(int);
-void		image_compare();
-void		hexdump(char *, int);
+void
+tcp_open(char *host)
+{
+	int port = 5000;
+	char *cp;
+
+	if ((cp = strchr(host, ':')) != NULL) {
+		*cp++ = '\0';
+		port = atoi(cp);
+	}
+}
