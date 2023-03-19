@@ -153,7 +153,7 @@ reprogram_block(int blkno)
 	 */
 	memp = &file_image[blkno * BLOCK_SIZE];
 	for (i = 0; i < BLOCK_SIZE; i++)
-		if (*memp++ != 0xff)
+		if ((int )*memp++ != 0xff)
 			break;
 	if (i == BLOCK_SIZE) {
 		/*
