@@ -51,7 +51,6 @@ main(int argc, char *argv[])
 	int i;
 	char *device;;
 
-	optind = opterr = 0;
 	device = "/dev/ttyS0:9600";
 	mem_size = 32768;
 	while ((i = getopt(argc, argv, "d:v")) != EOF) {
