@@ -40,10 +40,10 @@
 
 #define HIGHEST_BLOCK	0xfc
 
-extern	int	verbose;
-extern	int	serial_fd;
-extern	char	file_image[];
-extern	char	device_image[];
+extern	int		verbose;
+extern	int		serial_fd;
+extern	unsigned char	file_image[];
+extern	unsigned char	device_image[];
 
 /*
  * Prototypes...

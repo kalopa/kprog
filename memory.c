@@ -38,8 +38,8 @@
 
 #include "kprog.h"
 
-char		file_image[FLASH_SIZE];
-char		device_image[FLASH_SIZE];
+unsigned char	file_image[FLASH_SIZE];
+unsigned char	device_image[FLASH_SIZE];
 
 void		mem_callback(char *);
 
@@ -60,7 +60,7 @@ void
 image_compare()
 {
 	int i, j, same;
-	char *ap, *bp;
+	unsigned char *ap, *bp;
 
 	/*
 	 * Check each of the images, a page at a time.

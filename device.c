@@ -143,7 +143,8 @@ void
 reprogram_block(int blkno)
 {
 	int i, j;
-	char cmdbuffer[64], *cp, *memp;
+	char cmdbuffer[64], *cp;
+	unsigned char *memp;
 
 	if (blkno >= HIGHEST_BLOCK)
 		return;
@@ -173,7 +174,7 @@ reprogram_block(int blkno)
 		cp = cmdbuffer;
 		*cp++ = i + '0';
 		for (j = 0; j < 16; j++) {
-			sprintf(cp, "%02X.", *memp++);
+			sprintf(cp, "%02X.", (int )*memp++);
 			cp += 3;
 		}
 		serial_send(cmdbuffer);
