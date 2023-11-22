@@ -30,79 +30,35 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#include <stdio.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <string.h>
+#define FLASH_SIZE	32768
+#define MAX_LINELEN	512
 
-#include "kprog.h"
+#define BLOCK_SIZE	128
+#define BLOCK_COUNT	256
+#define PAGE_SIZE	256
+#define PAGE_COUNT	128
 
-int		verbose = 0;
-int		mem_size;
+#define HIGHEST_BLOCK	0xfc
 
-void		usage();
-
-/*
- * It all kicks off, right here...
- */
-int
-main(int argc, char *argv[])
-{
-	int i;
-	char *device;;
-
-	device = "/dev/ttyS0:9600";
-	mem_size = 32768;
-	while ((i = getopt(argc, argv, "d:v")) != EOF) {
-		switch (i) {
-		case 'd':
-			device = optarg;
-			break;
-
-		case 'v':
-			verbose = 1;
-			break;
-
-		default:
-			usage();
-			break;
-		}
-	}
-	printf("kprog - Kalopa Robotics AVR Programmer. v0.2\n");
-	printf("Device: %s\n", device);
-	printf("Memory: %d Bytes\n\n", mem_size);
-	if ((argc - optind) != 1)
-		usage();
-	if (*device == '/')
-		serial_open(device);
-	else
-		tcp_open(device);
-	/*
-	 * Initialize both memory buffers, then load the HEX file.
-	 */
-	memory_init();
-	intel_load(argv[optind]);
-	/*
-	 * Sync the remote device so we're at a command prompt in the
-	 * bootstrap code.
-	 */
-	bootstrap_mode();
-	/*
-	 * Load the device flash image.
-	 */
-	device_load();
-	/*
-	 * Compare images.
-	 */
-	image_compare();
-}
+extern	int		verbose;
+extern	int		serial_fd;
+extern	unsigned char	file_image[];
+extern	unsigned char	device_image[];
 
 /*
- * Print a usage message and exit.
+ * Prototypes...
  */
-void
-usage()
-{
-	fprintf(stderr, "Usage: kprog [-v][-d DEVICE] program.hex\n");
-	exit(2);
-}
+void		bootstrap_mode();
+int		prompt_wait(void (*)(char *));
+void		intel_load(char *);
+int		get_hex_bytes(char *, int);
+void		serial_open(char *);
+void		serial_send(char *);
+int		serial_read();
+void		serial_write(int);
+void		tcp_open(char *);
+void		memory_init();
+void		device_load();
+void		reprogram_block(int);
+void		image_compare();
+void		hexdump(char *, int);

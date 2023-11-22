@@ -1,8 +1,8 @@
-# avrprog
+# kprog - Kalopa Robotics Programmer
 
 Programmer code for AVR chip using the
 [libavr](https://github.com/kalopa/libavr)
- bootstrap module.
+bootstrap module.
 This module is designed to work with the
 [libavr/bootstrap.S](https://github.com/kalopa/libavr/blob/master/bootstrap.S)
 code to program an AVR chip, in-situ.
@@ -74,7 +74,8 @@ programming correctly.
 Bear in mind that the 'nn' argument to the D command is not the same as
 the 'bb' argument to the E and P commands.
 
-To upload sixteen bytes to the end of the memory buffer (112->127) use a command such as:
+To upload sixteen bytes to the end of the memory buffer (112->127)
+use a command such as:
 
     790.91.92.93.94.95.96.97.98.99.9A.9B.9C.9D.9E.9F.
 
