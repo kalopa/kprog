@@ -62,6 +62,7 @@ bootstrap_mode()
 	/*
 	 * Start by dumping any noise still left on the serial line.
 	 */
+	serial_send("\005\\");
 	while (serial_read() >= 0)
 		;
 	/*

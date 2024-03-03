@@ -57,4 +57,5 @@ tcp_open(char *host)
 		*cp++ = '\0';
 		port = atoi(cp);
 	}
+	printf("TCP Port %d\n", port);
 }
