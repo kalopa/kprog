@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-23, Kalopa Robotics Limited.  All rights reserved.
+ * Copyright (c) 2021-26, Kalopa Robotics Limited.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,73 +33,149 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "kprog.h"
 
-#define VERSION			2
-
 #define OUTER_TIMEOUT		300
-#define INNER_TIMEOUT		8
+#define INNER_TIMEOUT		32
+#define DRAIN_LIMIT		2000
+
+/*
+ * Device flash layout, as reported by the bootstrap code (or assumed,
+ * for the older BOOTv2 protocol). :boot_start and :boot_count describe
+ * the 128-byte blocks occupied by the bootstrap code itself, which we
+ * must never try to reprogram.
+ */
+int		flash_size = V2_FLASH_SIZE;
+int		boot_start = V2_BOOT_START;
+int		boot_count = V2_BOOT_COUNT;
 
 char		input[MAX_LINELEN];
 int		offset;
 
 /*
- * Send the right incantation to get the device into bootstrap
- * mode. Usually this is a ^E\ two character sequence, but it's not
+ * Send the right incantation to get the device into bootstrap mode.
+ * Usually this is a ^E\ two character sequence, but it's not
  * straightforward. We might already be at the bootstrap prompt, in
  * which case the ^E is ignored and the backslash causes a reset. This
  * code is non-trivial because it is our only opportunity to synchronize
  * the two sides of the communications channel. It's not pretty.
+ *
+ * The bootstrap string can be overridden (-b) for devices which speak a
+ * binary protocol, and where ^E\ would be a bad idea. In that case, if
+ * we see a bootstrap prompt (or an error) instead of the sign-on banner,
+ * we're already in the bootstrap code so send a backslash to restart it
+ * and get the banner.
+ *
+ * Once we have the banner, we let things settle and then re-sync on a
+ * fresh prompt, so that any stragglers (a second banner, or complaints
+ * about the bootstrap string) don't get mistaken for the reply to our
+ * first real command.
+ *
+ * The banner is "BOOTv2" for the original ATmega328P-only code. Newer
+ * bootstraps send "BOOTv3 KK SS NN" where KK is the flash size in KB,
+ * SS is the first 128-byte block occupied by the bootstrap code and NN
+ * is the number of blocks it occupies (all in hex).
  */
 void
 bootstrap_mode()
 {
-	int i, j, ch;
+	int i, j, ch, version, kbytes, sent_bs;
 	char *bootmsg = "BOOTv";
 
 	printf("Trying to get to Bootstrap mode...\n");
 	/*
-	 * Start by dumping any noise still left on the serial line.
+	 * Start by dumping any noise still left on the serial line. Send the
+	 * bootstrap string first, so a chatty application shuts up.
 	 */
-	serial_send("\005\\");
-	while (serial_read() >= 0)
+	serial_write_buf(bootstr, bootlen);
+	for (i = 0; i < DRAIN_LIMIT && serial_read_to(SETTLE_TIMEOUT) >= 0; i++)
 		;
 	/*
 	 * Wait to get some sort of boot message...
 	 */
-	for (i = 0; i < OUTER_TIMEOUT; i++) {
-		serial_send("\005\\");
-		for (j = 0; j < INNER_TIMEOUT; j++) {
+	version = -1;
+	for (i = 0; i < OUTER_TIMEOUT && version < 0; i++) {
+		serial_write_buf(bootstr, bootlen);
+		for (j = sent_bs = 0; j < INNER_TIMEOUT; j++) {
 			if ((ch = serial_read()) == bootmsg[0])
 				break;
+			if ((ch == '@' || ch == '-') && !sent_bs) {
+				/*
+				 * Already in the bootstrap code - restart it.
+				 */
+				serial_send("\\");
+				sent_bs = 1;
+			}
 		}
 		if (j == INNER_TIMEOUT)
 			continue;
-		j = 1;
-		while ((ch = serial_read()) != -1 && bootmsg[j] != '\0') {
-			if (bootmsg[j++] != ch)
+		for (j = 1; bootmsg[j] != '\0'; j++) {
+			if ((ch = serial_read()) != bootmsg[j])
 				break;
 		}
-		if (bootmsg[j] == '\0') {
-			ch -= '0';
-			if (ch != VERSION) {
-				fprintf(stderr, "kprog: bootstrap_mode: incorrect version: %d\n", ch);
-				exit(1);
-			}
-			printf("Bootstrap code version %d.\n", ch);
-			break;
-		}
+		if (bootmsg[j] != '\0')
+			continue;
+		if ((ch = serial_read()) >= '0' && ch <= '9')
+			version = ch - '0';
 	}
-	if (i == OUTER_TIMEOUT) {
+	if (version < 0) {
 		fprintf(stderr, "kprog: bootstrap_mode: could not initialize device.\n");
 		exit(1);
 	}
+	printf("Bootstrap code version %d.\n", version);
+	switch (version) {
+	case 2:
+		flash_size = V2_FLASH_SIZE;
+		boot_start = V2_BOOT_START;
+		boot_count = V2_BOOT_COUNT;
+		break;
+
+	case 3:
+		/*
+		 * Read the rest of the banner line and decode the layout.
+		 */
+		for (offset = 0; offset < (MAX_LINELEN-2); offset++) {
+			if ((ch = serial_read()) < 0 || ch == '\n' || ch == '\r' || ch == '@')
+				break;
+			input[offset] = ch;
+		}
+		input[offset] = '\0';
+		if (sscanf(input, " %x %x %x", &kbytes, &boot_start, &boot_count) != 3) {
+			fprintf(stderr, "kprog: bootstrap_mode: cannot parse banner \"%s\".\n", input);
+			exit(1);
+		}
+		flash_size = kbytes * 1024;
+		break;
+
+	default:
+		fprintf(stderr, "kprog: bootstrap_mode: unsupported bootstrap version: %d\n", version);
+		exit(1);
+	}
+	if (flash_size <= 0 || flash_size > FLASH_SIZE || (flash_size % PAGE_SIZE) != 0 ||
+	    boot_count <= 0 || boot_start < 0 ||
+	    (boot_start + boot_count) > (flash_size / BLOCK_SIZE)) {
+		fprintf(stderr, "kprog: bootstrap_mode: bad flash layout (%d bytes, boot @%02X+%d).\n",
+					flash_size, boot_start, boot_count);
+		exit(1);
+	}
+	printf("Flash: %dK, bootstrap code in blocks %02X to %02X.\n", flash_size / 1024,
+					boot_start, boot_start + boot_count - 1);
+	prompt_wait(NULL);
+	/*
+	 * Let the dust settle, then get a clean prompt.
+	 */
+	while (serial_read_to(SETTLE_TIMEOUT) >= 0)
+		;
+	serial_send("\r");
 	prompt_wait(NULL);
 }
 
 /*
- *
+ * Wait for a prompt ('@') from the bootstrap code. Any intervening lines
+ * are handed to the callback function, if there is one. A '-' means the
+ * last command failed.
  */
 int
 prompt_wait(void (*func)(char *))
@@ -138,6 +214,17 @@ prompt_wait(void (*func)(char *))
 }
 
 /*
+ * Is this block part of the bootstrap code (or beyond the end of flash)?
+ */
+int
+boot_block(int blkno)
+{
+	if (blkno >= (flash_size / BLOCK_SIZE))
+		return(1);
+	return(blkno >= boot_start && blkno < (boot_start + boot_count));
+}
+
+/*
  * Reprogram a block of code.
  */
 void
@@ -147,9 +234,9 @@ reprogram_block(int blkno)
 	char cmdbuffer[64], *cp;
 	unsigned char *memp;
 
-	if (blkno >= HIGHEST_BLOCK)
+	if (boot_block(blkno))
 		return;
-	printf("Re-programming block %d...\n", blkno);
+	printf("Re-programming block %02X...\n", blkno);
 	/*
 	 * Right - is there any chance this is an empty block?
 	 */
@@ -170,7 +257,6 @@ reprogram_block(int blkno)
 	 * Start by filling the remote memory buffer with a block of data.
 	 */
 	memp = &file_image[blkno * BLOCK_SIZE];
-	verbose = 2;
 	for (i = 0; i < (BLOCK_SIZE/16); i++) {
 		cp = cmdbuffer;
 		*cp++ = i + '0';
@@ -185,7 +271,6 @@ reprogram_block(int blkno)
 	 * Now send the program command. To do this, we first erase the
 	 * block and then program it.
 	 */
-	printf("P%02x.", blkno);
 	sprintf(cmdbuffer, "E%02X", blkno);
 	serial_send(cmdbuffer);
 	prompt_wait(NULL);

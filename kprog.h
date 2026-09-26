@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-23, Kalopa Robotics Limited.  All rights reserved.
+ * Copyright (c) 2021-26, Kalopa Robotics Limited.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,18 +30,39 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/*
+ * FLASH_SIZE is the largest device we support (the size of the local
+ * image buffers). The actual device flash size, and the location of the
+ * bootstrap code within it, are learned from the bootstrap banner when
+ * we connect to the device.
+ */
 #define FLASH_SIZE	32768
 #define MAX_LINELEN	512
 
 #define BLOCK_SIZE	128
-#define BLOCK_COUNT	256
+#define BLOCK_COUNT	(FLASH_SIZE / BLOCK_SIZE)
 #define PAGE_SIZE	256
-#define PAGE_COUNT	128
+#define PAGE_COUNT	(FLASH_SIZE / PAGE_SIZE)
 
-#define HIGHEST_BLOCK	0xfc
+/*
+ * Legacy (BOOTv2) layout: an ATmega328P with the bootstrap code in the
+ * top 512 bytes of the 32K flash.
+ */
+#define V2_FLASH_SIZE	32768
+#define V2_BOOT_START	0xfc
+#define V2_BOOT_COUNT	4
+
+#define MAX_BOOTSTR	64
+#define READ_TIMEOUT	4000		/* milliseconds */
+#define SETTLE_TIMEOUT	500		/* milliseconds */
 
 extern	int		verbose;
 extern	int		serial_fd;
+extern	int		flash_size;
+extern	int		boot_start;
+extern	int		boot_count;
+extern	unsigned char	bootstr[];
+extern	int		bootlen;
 extern	unsigned char	file_image[];
 extern	unsigned char	device_image[];
 
@@ -50,15 +71,19 @@ extern	unsigned char	device_image[];
  */
 void		bootstrap_mode();
 int		prompt_wait(void (*)(char *));
+int		boot_block(int);
 void		intel_load(char *);
 int		get_hex_bytes(char *, int);
 void		serial_open(char *);
 void		serial_send(char *);
+void		serial_write_buf(unsigned char *, int);
 int		serial_read();
+int		serial_read_to(int);
 void		serial_write(int);
 void		tcp_open(char *);
 void		memory_init();
 void		device_load();
 void		reprogram_block(int);
 void		image_compare();
+void		image_check();
 void		hexdump(char *, int);

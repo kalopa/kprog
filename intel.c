@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-23, Kalopa Robotics Limited.  All rights reserved.
+ * Copyright (c) 2021-26, Kalopa Robotics Limited.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -38,7 +38,26 @@
 
 #include "kprog.h"
 
+/*
+ * Intel HEX record types.
+ */
+#define REC_DATA		0
+#define REC_EOF			1
+#define REC_EXT_SEGMENT		2
+#define REC_START_SEGMENT	3
+#define REC_EXT_LINEAR		4
+#define REC_START_LINEAR	5
+
 int		intel_parse_line(char *);
+
+/*
+ * Upper address bits from the most recent extended address record.
+ * avr-objcopy emits these for things like the EEPROM (0x810000) or
+ * fuses, none of which we can program, so data records following a
+ * non-zero extended address are ignored.
+ */
+static unsigned long	upper_addr = 0;
+static int		nskipped = 0;
 
 /*
  * Read an Intel HEX file into memory
@@ -46,6 +65,7 @@ int		intel_parse_line(char *);
 void
 intel_load(char *hexfile)
 {
+	int lineno = 0;
 	char input[MAX_LINELEN+2], *cp;
 	FILE *fp;
 
@@ -55,17 +75,21 @@ intel_load(char *hexfile)
 		exit(1);
 	}
 	while (fgets(input, MAX_LINELEN, fp) != NULL) {
+		lineno++;
 		if ((cp = strpbrk(input, "\r\n")) != NULL)
 			*cp = '\0';
-		if (intel_parse_line(input) == 01)
+		if (*input == '\0')
+			continue;
+		if (intel_parse_line(input) == REC_EOF)
 			break;
 	}
 	fclose(fp);
+	if (nskipped > 0)
+		printf("Ignored %d record(s) outside program flash (EEPROM/fuses?).\n", nskipped);
 }
 
 /*
- * Parse a single line of an Intel HEX file, returning the last address
- * seen.
+ * Parse a single line of an Intel HEX file, returning the record type.
  */
 int
 intel_parse_line(char *linep)
@@ -76,8 +100,16 @@ intel_parse_line(char *linep)
 		fprintf(stderr, "kprog: bad Intel HEX format in file - missing header.\n");
 		exit(1);
 	}
+	if (strlen(linep) < 10 || (strlen(linep) & 1) != 0) {
+		fprintf(stderr, "kprog: bad Intel HEX format in file - short record.\n");
+		exit(1);
+	}
 	csum = len = get_hex_bytes(linep, 2);
 	linep += 2;
+	if ((int )strlen(linep) != (len + 4) * 2) {
+		fprintf(stderr, "kprog: bad Intel HEX format in file - record length mismatch.\n");
+		exit(1);
+	}
 	addr = get_hex_bytes(linep, 4);
 	linep += 4;
 	csum += (addr >> 8) & 0xff;
@@ -85,16 +117,48 @@ intel_parse_line(char *linep)
 	type = get_hex_bytes(linep, 2);
 	linep += 2;
 	csum += type;
-	for (i = 0; i < len; i++) {
-		data = get_hex_bytes(linep, 2);
-		csum += data;
-		file_image[addr++] = data;
-		linep += 2;
-	}
-	csum += get_hex_bytes(linep, 2);
-	csum &= 0xff;
+	/*
+	 * Verify the checksum before we believe any of the data.
+	 */
+	for (i = 0; i < len + 1; i++)
+		csum += get_hex_bytes(linep + i * 2, 2);
 	if ((csum & 0xff) != 0x00) {
 		fprintf(stderr, "kprog: invalid checksum in Intel HEX file.\n");
+		exit(1);
+	}
+	switch (type) {
+	case REC_DATA:
+		if (upper_addr != 0) {
+			nskipped++;
+			break;
+		}
+		if ((addr + len) > FLASH_SIZE) {
+			fprintf(stderr, "kprog: HEX file address %04x is beyond the %dK maximum.\n",
+						addr, FLASH_SIZE / 1024);
+			exit(1);
+		}
+		for (i = 0; i < len; i++) {
+			data = get_hex_bytes(linep, 2);
+			file_image[addr++] = data;
+			linep += 2;
+		}
+		break;
+
+	case REC_EXT_SEGMENT:
+		upper_addr = (unsigned long )get_hex_bytes(linep, 4) << 4;
+		break;
+
+	case REC_EXT_LINEAR:
+		upper_addr = (unsigned long )get_hex_bytes(linep, 4) << 16;
+		break;
+
+	case REC_EOF:
+	case REC_START_SEGMENT:
+	case REC_START_LINEAR:
+		break;
+
+	default:
+		fprintf(stderr, "kprog: unknown Intel HEX record type %02x.\n", type);
 		exit(1);
 	}
 	return(type);

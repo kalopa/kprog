@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021, Kalopa Robotics Limited. All rights reserved.
+ * Copyright (C) 2021-26, Kalopa Robotics Limited. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published

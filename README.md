@@ -18,7 +18,56 @@ The trick here is to get to the Bootstrap code.
 The general arrangement, and with a hat-tip to history,
 is to send a ^E\ two-character sequence to the running
 firmware, which tells it to go into bootstrap mode by
-jumping to address 0xe000.
+jumping to the `_bootstrap` entry point.
+
+## Usage
+
+    kprog [-v] [-d DEVICE] [-b BOOTSTR] program.hex
+
+The device can be a local serial port, optionally with a baud rate
+(`-d /dev/ttyUSB0:9600`, the default is `/dev/ttyS0:9600`), or a
+TCP host and port (`-d serial.kalopa.com:5016`) for a board which
+sits behind a serial concentrator or a `ser2net`-style bridge.
+The TCP port must be in raw mode (no telnet option negotiation).
+An IPv6 address can be given as `[addr]:port`.
+
+`-b` overrides the sequence used to kick the running firmware into
+bootstrap mode.
+It takes C-style escapes (`\\`, `\n`, `\r`, `\t`, `\e`, `\xHH` and
+`\ooo`), so a binary packet can be given for devices which don't
+speak plain ASCII.
+The default is `\005\\` (^E\).
+If **kprog** sees a bootstrap prompt rather than the sign-on banner,
+it assumes the device is already in bootstrap mode and sends a
+backslash to restart it, so it is safe to run against a device in
+either state.
+
+`-v` echoes everything received from the device.
+
+**kprog** reads the whole flash from the device, compares it with the
+HEX file, and only erases/programs the 128-byte blocks which differ.
+Blocks occupied by the bootstrap code itself are never touched (and
+are reported if they differ).
+Intel HEX records outside program flash (EEPROM, fuses) are ignored.
+
+## Supported devices
+
+The bootstrap code announces itself with a banner, and **kprog** uses
+that to work out the flash layout:
+
+| Banner | Meaning |
+| ------ | ------- |
+| `BOOTv2` | Original code: ATmega328P, 32K flash, bootstrap in blocks FC-FF (top 512 bytes) |
+| `BOOTv3 KK SS NN` | KK = flash size in KB, SS = first bootstrap block, NN = number of bootstrap blocks (hex) |
+
+So an ATmega328P built from the current **libavr** reports
+`BOOTv3 20 FC 04`, and an ATtiny1626 reports `BOOTv3 10 00 04`.
+On the tinyAVR 0/1/2-series parts the bootstrap lives in the BOOT
+section at the *bottom* of flash (FUSE.BOOTEND=2, 512 bytes) and the
+application is linked to start at 0x0200.
+See the comments in
+[libavr/bootstrap.S](https://github.com/kalopa/libavr/blob/master/bootstrap.S)
+for the details, and `avr.mk` in the same place for the linker flags.
 
 The real end-game here is to get this functionality folded into
 [avrdude](https://github.com/avrdudes/avrdude)
@@ -46,7 +95,7 @@ The serial commands are as follows:
 | 0-7xx | Upload 16 bytes of program data to memory |
 | Dnn | Dump page 'nn' of program flash |
 | Ebb | Erase a block (bb) of flash memory |
-| M | Dump the memory buffer |
+| M | Dump the memory buffer (ATmega only) |
 | Pbb | Program a block (bb) of flash memory |
 | R | Reset the system (jump to zero) |
 
@@ -85,14 +134,18 @@ You can verify this has happened, via the 'M' command.
 
 ## WARNING/LIMITATIONS:
 
-As of now, this code is very hard-wired to the ATMega328p, and occupies
-around 460 bytes of code.
-It needs to be made more portable...
+The bootstrap code has to fit in 512 bytes, which it does with a
+handful of bytes to spare on both the ATmega and the tinyAVR.
+The `M` command didn't make the cut on the tinyAVR.
 
 The baud rate is a tricky one.
 This code does not want to assume that the serial port has been configured.
 It first checks that the serial device is enabled - if so, it assumes
-everything has been configured correctly.
+everything has been configured correctly (so a board which jumps into
+the bootstrap from running firmware keeps its existing baud rate).
 Otherwise, it'll configure the stack and the serial port.
 It will set a slow baud rate (9600) to minimize errors over the serial
 line.
+On the ATmega this assumes a 16MHz clock; on the tinyAVR it assumes
+the reset-default clock (the 16/20MHz oscillator divided by six, as
+per FUSE.OSCCFG) and the default USART0 pins.

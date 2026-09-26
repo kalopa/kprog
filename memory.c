@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-23, Kalopa Robotics Limited.  All rights reserved.
+ * Copyright (c) 2021-26, Kalopa Robotics Limited.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -54,19 +54,38 @@ memory_init()
 }
 
 /*
+ * Make sure the HEX file image fits inside the device flash. This can
+ * only be done once we know the device layout, which is after we've
+ * talked to the bootstrap code.
+ */
+void
+image_check()
+{
+	int i;
+
+	for (i = flash_size; i < FLASH_SIZE; i++) {
+		if (file_image[i] != 0xff) {
+			fprintf(stderr, "kprog: HEX file has data at %04x, beyond the end of the %dK device flash.\n",
+						i, flash_size / 1024);
+			exit(1);
+		}
+	}
+}
+
+/*
  * Compare two images...
  */
 void
 image_compare()
 {
-	int i, j, same;
+	int i, j, same, nblocks = 0, nskipped = 0;
 	unsigned char *ap, *bp;
 
 	/*
-	 * Check each of the images, a page at a time.
+	 * Check each of the images, a block at a time.
 	 */
-	printf("Checking page differences.\n");
-	for (i = 0; i < FLASH_SIZE; i += BLOCK_SIZE) {
+	printf("Checking block differences.\n");
+	for (i = 0; i < flash_size; i += BLOCK_SIZE) {
 		same = 1;
 		ap = &file_image[i];
 		bp = &device_image[i];
@@ -76,9 +95,21 @@ image_compare()
 				break;
 			}
 		}
-		if (!same)
-			reprogram_block(i >> 7);
+		if (same)
+			continue;
+		if (boot_block(i / BLOCK_SIZE)) {
+			nskipped++;
+			continue;
+		}
+		reprogram_block(i / BLOCK_SIZE);
+		nblocks++;
 	}
+	if (nskipped > 0)
+		printf("Skipped %d block(s) which differ in the bootstrap area (cannot be reprogrammed).\n", nskipped);
+	if (nblocks == 0)
+		printf("Device is already up to date.\n");
+	else
+		printf("Reprogrammed %d block(s).\n", nblocks);
 }
 
 /*
@@ -91,7 +122,7 @@ device_load()
 	char cmdbuffer[8];
 
 	printf("Load flash image into local memory.\n");
-	for (i = 0; i < PAGE_COUNT; i++) {
+	for (i = 0; i < (flash_size / PAGE_SIZE); i++) {
 		sprintf(cmdbuffer, "D%02X", i);
 		serial_send(cmdbuffer);
 		prompt_wait(mem_callback);
@@ -117,6 +148,12 @@ mem_callback(char *linep)
 	while (*linep != '\0') {
 		while (isspace(*linep))
 			linep++;
+		if (*linep == '\0')
+			break;
+		if (addr >= FLASH_SIZE) {
+			fprintf(stderr, "kprog: device dump address %04x out of range.\n", addr);
+			exit(1);
+		}
 		device_image[addr++] = get_hex_bytes(linep, 2);
 		linep += 2;
 	}

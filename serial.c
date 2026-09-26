@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-23, Kalopa Robotics Limited.  All rights reserved.
+ * Copyright (c) 2021-26, Kalopa Robotics Limited.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -37,7 +37,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <termios.h>
-#include <syslog.h>
+#include <poll.h>
 #include <string.h>
 #include <errno.h>
 
@@ -71,7 +71,11 @@ struct  speed   {
 	{0, 0}
 };
 
-int		serial_fd;
+/*
+ * File descriptor for the device - either a tty or a TCP socket. The
+ * read/write functions below work with either.
+ */
+int		serial_fd = -1;
 
 /*
  * Open the serial port to talk to the AVR device.
@@ -112,45 +116,90 @@ serial_open(char *device)
 	tios.c_cflag |= (CLOCAL|CREAD|CS8);
 	tios.c_lflag = tios.c_iflag = tios.c_oflag = 0;
 	tios.c_cc[VMIN] = 0;
-	tios.c_cc[VTIME] = 40;
+	tios.c_cc[VTIME] = READ_TIMEOUT / 100;
 	if (tcsetattr(serial_fd, TCSANOW, &tios) < 0) {
 		perror("?kprog - tcsetattr failed");
 		exit(1);
 	}
+	printf("Serial device %s at %d baud.\n", device, speed);
 }
 
 /*
- * Send a string of characters to the serial port.
+ * Send a string of characters to the device. Written as a single block
+ * so that a command travels in one TCP segment rather than dribbling
+ * out a byte at a time.
  */
 void
 serial_send(char *strp)
 {
-	int ch;
-
-	while ((ch = *strp++) != '\0')
-		serial_write(ch);
+	serial_write_buf((unsigned char *)strp, strlen(strp));
 }
 
 /*
- * Read a single byte from the serial port.
+ * Send an arbitrary block of bytes (which may include NULs) to the device.
+ */
+void
+serial_write_buf(unsigned char *bufp, int len)
+{
+	int n;
+
+	while (len > 0) {
+		if ((n = write(serial_fd, bufp, len)) < 0) {
+			if (errno == EINTR)
+				continue;
+			perror("kprog: serial_send");
+			exit(1);
+		}
+		bufp += n;
+		len -= n;
+	}
+}
+
+/*
+ * Read a single byte from the device. Returns -1 if nothing arrives
+ * within READ_TIMEOUT milliseconds. A closed TCP connection is fatal.
  */
 int
 serial_read()
 {
-	int n;
-	char buffer[2];
+	return(serial_read_to(READ_TIMEOUT));
+}
 
-	if ((n = read(serial_fd, buffer, 1)) < 0) {
-		perror("kprog: serial_read");
+/*
+ * As above, but with an explicit timeout (in milliseconds).
+ */
+int
+serial_read_to(int timeout)
+{
+	int n;
+	unsigned char buffer[2];
+	struct pollfd pfd;
+
+	pfd.fd = serial_fd;
+	pfd.events = POLLIN;
+	while ((n = poll(&pfd, 1, timeout)) < 0) {
+		if (errno == EINTR)
+			continue;
+		perror("kprog: serial_read (poll)");
 		exit(1);
 	}
 	if (n == 0)
 		return(-1);
+	if ((n = read(serial_fd, buffer, 1)) < 0) {
+		perror("kprog: serial_read");
+		exit(1);
+	}
+	if (n == 0) {
+		fprintf(stderr, "kprog: serial_read: connection closed by remote end.\n");
+		exit(1);
+	}
+	if (verbose)
+		fputc(buffer[0], stdout);
 	return(buffer[0]);
 }
 
 /*
- * Write a single character to the serial port.
+ * Write a single character to the device.
  */
 void
 serial_write(int ch)
@@ -158,8 +207,6 @@ serial_write(int ch)
 	char buffer[2];
 
 	buffer[0] = ch;
-	if (write(serial_fd, buffer, 1) < 0) {
-		perror("kprog: serial_write");
-		exit(1);
-	}
+	buffer[1] = '\0';
+	serial_send(buffer);
 }

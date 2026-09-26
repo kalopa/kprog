@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-23, Kalopa Robotics Limited.  All rights reserved.
+ * Copyright (c) 2021-26, Kalopa Robotics Limited.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,33 +29,93 @@
  * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ * ABSTRACT
+ * Connect to an AVR device which sits behind a serial concentrator
+ * (or a ser2net/socat style bridge) using a raw TCP connection. The
+ * device is specified as "host:port" (an IPv6 literal can be given
+ * as "[addr]:port"). Once connected, the socket descriptor is used
+ * by the same serial_read/serial_write routines as the tty code, so
+ * the rest of kprog neither knows nor cares which transport is in use.
+ *
+ * Note that the concentrator port is expected to be in "raw" mode,
+ * without any telnet option negotiation (RFC2217 is not supported).
  */
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <syslog.h>
 #include <string.h>
 #include <errno.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <netdb.h>
 
 #include "kprog.h"
 
-int		tcp_fd;
+#define DEFAULT_PORT	"5000"
 
 /*
- * Open the TCP port
+ * Open a TCP connection to the remote host/port.
  */
 void
-tcp_open(char *host)
+tcp_open(char *device)
 {
-	int port = 5000;
-	char *cp;
+	int fd, err, one = 1;
+	char *host, *port, *cp;
+	struct addrinfo hints, *res, *rp;
 
-	if ((cp = strchr(host, ':')) != NULL) {
+	host = strdup(device);
+	port = DEFAULT_PORT;
+	if (*host == '[') {
+		/*
+		 * IPv6 literal, [addr]:port
+		 */
+		host++;
+		if ((cp = strchr(host, ']')) == NULL) {
+			fprintf(stderr, "?kprog - bad IPv6 address: %s\n", device);
+			exit(1);
+		}
 		*cp++ = '\0';
-		port = atoi(cp);
+		if (*cp == ':')
+			port = cp + 1;
+	} else if ((cp = strrchr(host, ':')) != NULL) {
+		*cp++ = '\0';
+		port = cp;
 	}
-	printf("TCP Port %d\n", port);
+	if (*port == '\0' || atoi(port) <= 0 || atoi(port) > 65535) {
+		fprintf(stderr, "?kprog - invalid TCP port: %s\n", port);
+		exit(1);
+	}
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	if ((err = getaddrinfo(host, port, &hints, &res)) != 0) {
+		fprintf(stderr, "?kprog - cannot resolve %s: %s\n", host, gai_strerror(err));
+		exit(1);
+	}
+	fd = -1;
+	for (rp = res; rp != NULL; rp = rp->ai_next) {
+		if ((fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol)) < 0)
+			continue;
+		if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0)
+			break;
+		close(fd);
+		fd = -1;
+	}
+	freeaddrinfo(res);
+	if (fd < 0) {
+		fprintf(stderr, "?kprog - cannot connect to %s port %s: ", host, port);
+		perror("");
+		exit(1);
+	}
+	/*
+	 * The bootstrap protocol is a strict command/response affair, so
+	 * make sure each command goes out on the wire immediately.
+	 */
+	if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)) < 0)
+		perror("kprog: warning - TCP_NODELAY");
+	printf("Connected to %s, TCP port %s.\n", host, port);
+	serial_fd = fd;
 }
